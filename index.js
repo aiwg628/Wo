@@ -27,6 +27,10 @@ const TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 
+// Constants
+const SUPPORT_ROLE_ID = "1535334335836590120"; // آيدي رتبة الدعم
+const TICKET_CATEGORY_ID = "1546514716753666098"; // آيدي الكاتيجوري
+
 if (!TOKEN || !CLIENT_ID) {
   console.error("Error: Missing DISCORD_TOKEN or CLIENT_ID.");
   process.exit(1);
@@ -131,16 +135,16 @@ client.once("ready", () => {
 // Ticket Panel Builder
 function buildTicketPanel() {
   const embed = new EmbedBuilder()
-    .setTitle("مركز الدعم الفني")
+    .setTitle("مركز الطلبات والدعم")
     .setDescription(
-      "اضغط على الزر أدناه لإنشاء تذكرة جديدة.\nسيتم فتح قناة خاصة للتواصل مع فريق الإدارة."
+      "لتقديم طلب جديد أو التواصل مع الإدارة، اضغط على الزر أدناه."
     )
     .setColor(0x5865f2);
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId("ticket_open")
-      .setLabel("إنشاء تذكرة")
+      .setLabel("للطلب اضغط 👇🏻")
       .setStyle(ButtonStyle.Primary)
   );
 
@@ -153,9 +157,10 @@ client.on("interactionCreate", async interaction => {
     // Slash Commands Handling
     if (interaction.isChatInputCommand()) {
 
-      // Command: /ticket
+      // Command: /ticket (إرسال اللوحة مباشرة في القناة بدون رد تفاعلي إضافي)
       if (interaction.commandName === "ticket") {
-        await interaction.reply(buildTicketPanel());
+        await interaction.channel.send(buildTicketPanel());
+        await interaction.deferReply().then(() => interaction.deleteReply());
         return;
       }
 
@@ -189,7 +194,6 @@ client.on("interactionCreate", async interaction => {
           ephemeral: true
         });
 
-        // Log action in channel
         await interaction.channel.send({
           embeds: [
             new EmbedBuilder()
@@ -270,6 +274,7 @@ client.on("interactionCreate", async interaction => {
       const channel = await guild.channels.create({
         name: `ticket-${interaction.user.id}`,
         type: ChannelType.GuildText,
+        parent: TICKET_CATEGORY_ID,
         permissionOverwrites: [
           {
             id: guild.roles.everyone.id,
@@ -297,7 +302,7 @@ client.on("interactionCreate", async interaction => {
 
       const embed = new EmbedBuilder()
         .setTitle("تذكرة جديدة")
-        .setDescription("يرجى توضيح استفسارك أو مشكلتك، وسيقوم فريق الإدارة بالرد عليك في أقرب وقت.")
+        .setDescription("اكتب تفاصيل طلبك أو مشكلتك هنا وسيقوم الفريق بالرد عليك.")
         .setColor(0x57f287);
 
       const row = new ActionRowBuilder().addComponents(
@@ -307,8 +312,11 @@ client.on("interactionCreate", async interaction => {
           .setStyle(ButtonStyle.Danger)
       );
 
+      // منشن صاحب التذكرة + منشن رتبة الدعم الفني
+      const mentionContent = `${interaction.user} <@&${SUPPORT_ROLE_ID}>`;
+
       await channel.send({
-        content: `${interaction.user}`,
+        content: mentionContent,
         embeds: [embed],
         components: [row]
       });
@@ -321,8 +329,17 @@ client.on("interactionCreate", async interaction => {
       return;
     }
 
-    // Button Handling: Close Ticket
+    // Button Handling: Close Ticket (الإدارة فقط)
     if (interaction.isButton() && interaction.customId === "ticket_close") {
+      
+      if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+        await interaction.reply({
+          content: "عذراً، هذا الإجراء مخصص فقط لأعضاء الإدارة.",
+          ephemeral: true
+        });
+        return;
+      }
+
       await interaction.reply("سيتم إغلاق القناة خلال 5 ثوانٍ...");
 
       setTimeout(() => {
