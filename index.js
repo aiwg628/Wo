@@ -9,14 +9,14 @@ const {
   ChannelType,
   ActionRowBuilder,
   ButtonBuilder,
-  ButtonStyle,
-  EmbedBuilder
+  ButtonStyle
 } = require("discord.js");
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMembers, // يتطلب تفعيل Server Members Intent من ديسكورد
     GatewayIntentBits.DirectMessages
   ],
   partials: [Partials.Channel]
@@ -45,7 +45,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("dm")
-    .setDescription("إرسال رسالة مباشرة للمستخدم")
+    .setDescription("إرسال رسالة مباشرة لمستخدم")
     .addUserOption(option =>
       option
         .setName("user")
@@ -64,6 +64,22 @@ const commands = [
         .setDescription("مرفق اختياري")
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
+
+  new SlashCommandBuilder()
+    .setName("dmall")
+    .setDescription("إرسال رسالة خاصة لجميع أعضاء السيرفر")
+    .addStringOption(option =>
+      option
+        .setName("message")
+        .setDescription("محتوى الرسالة")
+        .setRequired(true)
+    )
+    .addAttachmentOption(option =>
+      option
+        .setName("image")
+        .setDescription("مرفق اختياري")
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   new SlashCommandBuilder()
     .setName("announce")
@@ -117,6 +133,9 @@ async function registerCommands() {
   }
 }
 
+// Helper: Delay Execution
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 // Ready Event
 client.once("ready", () => {
   console.log(`Bot initialized as ${client.user.tag}`);
@@ -134,12 +153,9 @@ client.once("ready", () => {
 
 // Ticket Panel Builder
 function buildTicketPanel() {
-  const embed = new EmbedBuilder()
-    .setTitle("مركز الطلبات والدعم")
-    .setDescription(
-      "لتقديم طلب جديد أو التواصل مع الإدارة، اضغط على الزر أدناه."
-    )
-    .setColor(0x5865f2);
+  const textContent = 
+    "**مركز الطلبات والدعم**\n" +
+    "لتقديم طلب جديد أو التواصل مع الإدارة، اضغط على الزر أدناه.";
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -148,16 +164,15 @@ function buildTicketPanel() {
       .setStyle(ButtonStyle.Primary)
   );
 
-  return { embeds: [embed], components: [row] };
+  return { content: textContent, components: [row] };
 }
 
 // Main Interaction Handler
 client.on("interactionCreate", async interaction => {
   try {
-    // Slash Commands Handling
     if (interaction.isChatInputCommand()) {
 
-      // Command: /ticket (إرسال اللوحة مباشرة في القناة بدون رد تفاعلي إضافي)
+      // Command: /ticket
       if (interaction.commandName === "ticket") {
         await interaction.channel.send(buildTicketPanel());
         await interaction.deferReply().then(() => interaction.deleteReply());
@@ -170,17 +185,11 @@ client.on("interactionCreate", async interaction => {
         const message = interaction.options.getString("message");
         const image = interaction.options.getAttachment("image");
 
-        const embed = new EmbedBuilder()
-          .setDescription(message)
-          .setColor(0x5865f2)
-          .setTimestamp();
-
-        if (image) {
-          embed.setImage(image.url);
-        }
+        let dmPayload = { content: message };
+        if (image) dmPayload.files = [image.url];
 
         try {
-          await user.send({ embeds: [embed] });
+          await user.send(dmPayload);
         } catch {
           await interaction.reply({
             content: "تعذر إرسال الرسالة، قد تكون الرسائل الخاصة مغلقة لدى المستخدم.",
@@ -194,13 +203,47 @@ client.on("interactionCreate", async interaction => {
           ephemeral: true
         });
 
-        await interaction.channel.send({
-          embeds: [
-            new EmbedBuilder()
-              .setTitle("سجل النظام")
-              .setDescription(`تم استخدام أمر الرسائل الخاصة للمستخدم ${user} بواسطة ${interaction.user}`)
-              .setColor(0x5865f2)
-          ]
+        await interaction.channel.send(
+          `**سجل النظام:** تم استخدام أمر الرسائل الخاصة للمستخدم ${user} بواسطة ${interaction.user}`
+        );
+
+        return;
+      }
+
+      // Command: /dmall (إرسال للجميع)
+      if (interaction.commandName === "dmall") {
+        const message = interaction.options.getString("message");
+        const image = interaction.options.getAttachment("image");
+
+        await interaction.reply({
+          content: "بدأت عملية الإرسال لجميع الأعضاء، قد يستغرق الأمر بعض الوقت...",
+          ephemeral: true
+        });
+
+        const members = await interaction.guild.members.fetch();
+        let successCount = 0;
+        let failCount = 0;
+
+        let dmPayload = { content: message };
+        if (image) dmPayload.files = [image.url];
+
+        for (const [id, member] of members) {
+          if (member.user.bot) continue;
+
+          try {
+            await member.send(dmPayload);
+            successCount++;
+          } catch {
+            failCount++;
+          }
+
+          // فاصل زمني لتجنب إغلاق البوت بواسطة Discord API
+          await sleep(1500);
+        }
+
+        await interaction.followUp({
+          content: `اكتملت العملية.\nتم الإرسال بنجاح إلى: ${successCount}\nفشل الإرسال إلى: ${failCount}`,
+          ephemeral: true
         });
 
         return;
@@ -212,23 +255,17 @@ client.on("interactionCreate", async interaction => {
         const message = interaction.options.getString("message");
         const image = interaction.options.getAttachment("image");
 
-        const embed = new EmbedBuilder()
-          .setTitle(title)
-          .setDescription(message)
-          .setColor(0x5865f2)
-          .setTimestamp()
-          .setFooter({ text: interaction.guild.name });
+        let announceText = `**${title}**\n\n${message}`;
+        let announcePayload = { content: announceText };
 
-        if (image) {
-          embed.setImage(image.url);
-        }
+        if (image) announcePayload.files = [image.url];
 
         await interaction.reply({
           content: "تم نشر الإعلان بنجاح.",
           ephemeral: true
         });
 
-        await interaction.channel.send({ embeds: [embed] });
+        await interaction.channel.send(announcePayload);
         return;
       }
 
@@ -241,16 +278,7 @@ client.on("interactionCreate", async interaction => {
           ephemeral: true
         });
 
-        await interaction.channel.send({
-          embeds: [
-            new EmbedBuilder()
-              .setTitle("إعلان ترويجي")
-              .setDescription(message)
-              .setColor(0x5865f2)
-              .setTimestamp()
-          ]
-        });
-
+        await interaction.channel.send(`**إعلان ترويجي:**\n${message}`);
         return;
       }
     }
@@ -300,11 +328,6 @@ client.on("interactionCreate", async interaction => {
         ]
       });
 
-      const embed = new EmbedBuilder()
-        .setTitle("تذكرة جديدة")
-        .setDescription("اكتب تفاصيل طلبك أو مشكلتك هنا وسيقوم الفريق بالرد عليك.")
-        .setColor(0x57f287);
-
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId("ticket_close")
@@ -312,12 +335,13 @@ client.on("interactionCreate", async interaction => {
           .setStyle(ButtonStyle.Danger)
       );
 
-      // منشن صاحب التذكرة + منشن رتبة الدعم الفني
-      const mentionContent = `${interaction.user} <@&${SUPPORT_ROLE_ID}>`;
+      const ticketText = 
+        `${interaction.user} <@&${SUPPORT_ROLE_ID}>\n` +
+        "**تذكرة جديدة**\n" +
+        "اكتب تفاصيل طلبك أو مشكلتك هنا وسيقوم الفريق بالرد عليك.";
 
       await channel.send({
-        content: mentionContent,
-        embeds: [embed],
+        content: ticketText,
         components: [row]
       });
 
@@ -331,7 +355,6 @@ client.on("interactionCreate", async interaction => {
 
     // Button Handling: Close Ticket (الإدارة فقط)
     if (interaction.isButton() && interaction.customId === "ticket_close") {
-      
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
         await interaction.reply({
           content: "عذراً، هذا الإجراء مخصص فقط لأعضاء الإدارة.",
