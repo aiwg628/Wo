@@ -16,7 +16,7 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.GuildMembers, // يتطلب تفعيل Server Members Intent من ديسكورد
+    GatewayIntentBits.GuildMembers,
     GatewayIntentBits.DirectMessages
   ],
   partials: [Partials.Channel]
@@ -105,7 +105,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("promo")
-    .setDescription("إرسال رسالة ترويجية")
+    .setDescription("إرسال رسالة برومو")
     .addStringOption(option =>
       option
         .setName("message")
@@ -210,7 +210,7 @@ client.on("interactionCreate", async interaction => {
         return;
       }
 
-      // Command: /dmall (إرسال للجميع)
+      // Command: /dmall
       if (interaction.commandName === "dmall") {
         const message = interaction.options.getString("message");
         const image = interaction.options.getAttachment("image");
@@ -237,7 +237,6 @@ client.on("interactionCreate", async interaction => {
             failCount++;
           }
 
-          // فاصل زمني لتجنب إغلاق البوت بواسطة Discord API
           await sleep(1500);
         }
 
@@ -269,16 +268,16 @@ client.on("interactionCreate", async interaction => {
         return;
       }
 
-      // Command: /promo
+      // Command: /promo (إرسال الرسالة كما هي دون عناوين إضافية)
       if (interaction.commandName === "promo") {
         const message = interaction.options.getString("message");
 
         await interaction.reply({
-          content: "تم إرسال الترويج بنجاح.",
+          content: "تم إرسال البرومو بنجاح.",
           ephemeral: true
         });
 
-        await interaction.channel.send(`**إعلان ترويجي:**\n${message}`);
+        await interaction.channel.send(message);
         return;
       }
     }
