@@ -112,6 +112,24 @@ const commands = [
         .setDescription("محتوى الرسالة")
         .setRequired(true)
     )
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
+
+  // أمر جديد: إرسال صورة في الروم
+  new SlashCommandBuilder()
+    .setName("image")
+    .setDescription("إرسال صورة في الروم الحالية")
+    .addAttachmentOption(option =>
+      option
+        .setName("file")
+        .setDescription("اختر الصورة المراد إرسالها")
+        .setRequired(true)
+    )
+    .addStringOption(option =>
+      option
+        .setName("message")
+        .setDescription("نص اختياري مع الصورة")
+        .setRequired(false)
+    )
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
 ].map(command => command.toJSON());
 
@@ -268,7 +286,7 @@ client.on("interactionCreate", async interaction => {
         return;
       }
 
-      // Command: /promo (إرسال الرسالة كما هي دون عناوين إضافية)
+      // Command: /promo
       if (interaction.commandName === "promo") {
         const message = interaction.options.getString("message");
 
@@ -280,14 +298,41 @@ client.on("interactionCreate", async interaction => {
         await interaction.channel.send(message);
         return;
       }
+
+      // Command: /image (إرسال صورة في الروم)
+      if (interaction.commandName === "image") {
+        const imageFile = interaction.options.getAttachment("file");
+        const optionalMessage = interaction.options.getString("message");
+
+        let imagePayload = {
+          files: [imageFile.url]
+        };
+
+        if (optionalMessage) {
+          imagePayload.content = optionalMessage;
+        }
+
+        await interaction.reply({
+          content: "تم إرسال الصورة بنجاح.",
+          ephemeral: true
+        });
+
+        await interaction.channel.send(imagePayload);
+        return;
+      }
     }
 
     // Button Handling: Open Ticket
     if (interaction.isButton() && interaction.customId === "ticket_open") {
       const guild = interaction.guild;
+      
+      // تجهيز اسم التذكرة باليوزر
+      const usernameClean = interaction.user.username.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const ticketChannelName = `ticket-${usernameClean || interaction.user.id}`;
 
+      // التحقق من وجود تذكرة سابقة باسم اليوزر أو بالآيدي
       const existingChannel = guild.channels.cache.find(
-        channel => channel.name === `ticket-${interaction.user.id}`
+        channel => channel.name === ticketChannelName || channel.name === `ticket-${interaction.user.id}`
       );
 
       if (existingChannel) {
@@ -299,7 +344,7 @@ client.on("interactionCreate", async interaction => {
       }
 
       const channel = await guild.channels.create({
-        name: `ticket-${interaction.user.id}`,
+        name: ticketChannelName,
         type: ChannelType.GuildText,
         parent: TICKET_CATEGORY_ID,
         permissionOverwrites: [
