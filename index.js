@@ -1,435 +1,404 @@
 const {
   Client,
   GatewayIntentBits,
-  Partials,
+  PermissionsBitField,
   REST,
   Routes,
   SlashCommandBuilder,
-  PermissionFlagsBits,
-  ChannelType,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle
+  EmbedBuilder
 } = require("discord.js");
+
+const TOKEN = process.env.DISCORD_TOKEN;
+
+if (!TOKEN) {
+  console.error("❌ DISCORD_TOKEN غير موجود في Railway.");
+  process.exit(1);
+}
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.DirectMessages
-  ],
-  partials: [Partials.Channel]
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
+  ]
 });
 
-// Environment Variables
-const TOKEN = process.env.DISCORD_TOKEN;
-const CLIENT_ID = process.env.CLIENT_ID;
-const GUILD_ID = process.env.GUILD_ID;
+const command = new SlashCommandBuilder()
+  .setName("protect")
+  .setDescription("أوامر حماية السيرفر")
+  .addSubcommand(sub =>
+    sub
+      .setName("confirm")
+      .setDescription("إزالة الرتب ذات الصلاحيات وطرد البوتات وحذف الويبهوكات")
+  )
+  .addSubcommand(sub =>
+    sub
+      .setName("status")
+      .setDescription("عرض حالة الحماية")
+  );
 
-// Constants
-const SUPPORT_ROLE_ID = "1535334335836590120"; // آيدي رتبة الدعم
-const TICKET_CATEGORY_ID = "1546514716753666098"; // آيدي الكاتيجوري
-
-if (!TOKEN || !CLIENT_ID) {
-  console.error("Error: Missing DISCORD_TOKEN or CLIENT_ID.");
-  process.exit(1);
-}
-
-// Slash Commands Definition
-const commands = [
-  new SlashCommandBuilder()
-    .setName("ticket")
-    .setDescription("إرسال لوحة الدعم الفني والتذاكر")
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-
-  new SlashCommandBuilder()
-    .setName("dm")
-    .setDescription("إرسال رسالة مباشرة لمستخدم")
-    .addUserOption(option =>
-      option
-        .setName("user")
-        .setDescription("المستهدف")
-        .setRequired(true)
-    )
-    .addStringOption(option =>
-      option
-        .setName("message")
-        .setDescription("محتوى الرسالة")
-        .setRequired(true)
-    )
-    .addAttachmentOption(option =>
-      option
-        .setName("image")
-        .setDescription("مرفق اختياري")
-    )
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
-
-  new SlashCommandBuilder()
-    .setName("dmall")
-    .setDescription("إرسال رسالة خاصة لجميع أعضاء السيرفر")
-    .addStringOption(option =>
-      option
-        .setName("message")
-        .setDescription("محتوى الرسالة")
-        .setRequired(true)
-    )
-    .addAttachmentOption(option =>
-      option
-        .setName("image")
-        .setDescription("مرفق اختياري")
-    )
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-
-  new SlashCommandBuilder()
-    .setName("announce")
-    .setDescription("نشر إعلان في الروم الحالية")
-    .addStringOption(option =>
-      option
-        .setName("title")
-        .setDescription("عنوان الإعلان")
-        .setRequired(true)
-    )
-    .addStringOption(option =>
-      option
-        .setName("message")
-        .setDescription("نص الإعلان")
-        .setRequired(true)
-    )
-    .addAttachmentOption(option =>
-      option
-        .setName("image")
-        .setDescription("صورة الإعلان")
-    )
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
-
-  new SlashCommandBuilder()
-    .setName("promo")
-    .setDescription("إرسال رسالة برومو")
-    .addStringOption(option =>
-      option
-        .setName("message")
-        .setDescription("محتوى الرسالة")
-        .setRequired(true)
-    )
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
-
-  // أمر جديد: إرسال صورة في الروم
-  new SlashCommandBuilder()
-    .setName("image")
-    .setDescription("إرسال صورة في الروم الحالية")
-    .addAttachmentOption(option =>
-      option
-        .setName("file")
-        .setDescription("اختر الصورة المراد إرسالها")
-        .setRequired(true)
-    )
-    .addStringOption(option =>
-      option
-        .setName("message")
-        .setDescription("نص اختياري مع الصورة")
-        .setRequired(false)
-    )
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
-].map(command => command.toJSON());
-
-// Register Slash Commands
 async function registerCommands() {
   const rest = new REST({ version: "10" }).setToken(TOKEN);
 
-  try {
-    console.log("Registering application commands...");
+  for (const guild of client.guilds.cache.values()) {
+    try {
+      await rest.put(
+        Routes.applicationGuildCommands(client.user.id, guild.id),
+        {
+          body: [command.toJSON()]
+        }
+      );
 
-    const route = GUILD_ID
-      ? Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID)
-      : Routes.applicationCommands(CLIENT_ID);
-
-    await rest.put(route, { body: commands });
-    console.log("Commands registered successfully.");
-  } catch (error) {
-    console.error("Failed to register commands:", error);
+      console.log(`✅ Registered commands in ${guild.name}`);
+    } catch (error) {
+      console.error(
+        `❌ Failed to register commands in ${guild.name}:`,
+        error.message
+      );
+    }
   }
 }
 
-// Helper: Delay Execution
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-// Ready Event
-client.once("ready", () => {
-  console.log(`Bot initialized as ${client.user.tag}`);
-
-  client.user.setPresence({
-    activities: [
-      {
-        name: "نظام التذاكر والدعم",
-        type: 3
-      }
-    ],
-    status: "online"
-  });
-});
-
-// Ticket Panel Builder
-function buildTicketPanel() {
-  const textContent = 
-    "**مركز الطلبات والدعم**\n" +
-    "لتقديم طلب جديد أو التواصل مع الإدارة، اضغط على الزر أدناه.";
-
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId("ticket_open")
-      .setLabel("للطلب اضغط 👇🏻")
-      .setStyle(ButtonStyle.Primary)
+function isAdmin(member) {
+  return member.permissions.has(
+    PermissionsBitField.Flags.Administrator
   );
-
-  return { content: textContent, components: [row] };
 }
 
-// Main Interaction Handler
-client.on("interactionCreate", async interaction => {
-  try {
-    if (interaction.isChatInputCommand()) {
+async function removePermissionRoles(guild) {
+  let removed = 0;
+  let membersChanged = 0;
 
-      // Command: /ticket
-      if (interaction.commandName === "ticket") {
-        await interaction.channel.send(buildTicketPanel());
-        await interaction.deferReply().then(() => interaction.deleteReply());
-        return;
-      }
+  await guild.members.fetch();
 
-      // Command: /dm
-      if (interaction.commandName === "dm") {
-        const user = interaction.options.getUser("user");
-        const message = interaction.options.getString("message");
-        const image = interaction.options.getAttachment("image");
+  for (const member of guild.members.cache.values()) {
 
-        let dmPayload = { content: message };
-        if (image) dmPayload.files = [image.url];
+    // لا نلمس البوت نفسه
+    if (member.id === client.user.id) continue;
+
+    const roles = member.roles.cache.filter(role => {
+
+      // @everyone
+      if (role.id === guild.id) return false;
+
+      // Discord managed roles
+      if (role.managed) return false;
+
+      // فقط الرتب التي فيها صلاحيات
+      if (role.permissions.bitfield === 0n) return false;
+
+      // لازم البوت يقدر يعدل الرتبة
+      if (!role.editable) return false;
+
+      return true;
+    });
+
+    if (roles.size === 0) continue;
+
+    try {
+      await member.roles.remove(
+        roles,
+        "Protection: removing permission-bearing roles"
+      );
+
+      removed += roles.size;
+      membersChanged++;
+
+      console.log(
+        `🧹 Removed ${roles.size} permission role(s) from ${member.user.tag}`
+      );
+
+    } catch (error) {
+      console.error(
+        `❌ Failed removing roles from ${member.user.tag}:`,
+        error.message
+      );
+    }
+  }
+
+  return {
+    removed,
+    membersChanged
+  };
+}
+
+async function kickAllBots(guild) {
+  let kicked = 0;
+
+  await guild.members.fetch();
+
+  for (const member of guild.members.cache.values()) {
+
+    if (!member.user.bot) continue;
+
+    // لا يطرد نفسه
+    if (member.id === client.user.id) continue;
+
+    if (!member.kickable) {
+      console.log(
+        `⚠️ Cannot kick ${member.user.tag} - bot role is too high`
+      );
+      continue;
+    }
+
+    try {
+      await member.kick(
+        "Protection: removing unauthorized bot"
+      );
+
+      kicked++;
+
+      console.log(`🤖 Kicked bot: ${member.user.tag}`);
+
+    } catch (error) {
+      console.error(
+        `❌ Failed kicking ${member.user.tag}:`,
+        error.message
+      );
+    }
+  }
+
+  return kicked;
+}
+
+async function deleteAllWebhooks(guild) {
+  let deleted = 0;
+
+  for (const channel of guild.channels.cache.values()) {
+
+    if (!channel.fetchWebhooks) continue;
+
+    try {
+      const webhooks = await channel.fetchWebhooks();
+
+      for (const webhook of webhooks.values()) {
 
         try {
-          await user.send(dmPayload);
-        } catch {
-          await interaction.reply({
-            content: "تعذر إرسال الرسالة، قد تكون الرسائل الخاصة مغلقة لدى المستخدم.",
-            ephemeral: true
-          });
-          return;
+          await webhook.delete(
+            "Protection: deleting webhook"
+          );
+
+          deleted++;
+
+          console.log(
+            `🔗 Deleted webhook: ${webhook.id}`
+          );
+
+        } catch (error) {
+          console.error(
+            `❌ Failed deleting webhook ${webhook.id}:`,
+            error.message
+          );
         }
-
-        await interaction.reply({
-          content: `تم إرسال الرسالة بنجاح إلى ${user}.`,
-          ephemeral: true
-        });
-
-        await interaction.channel.send(
-          `**سجل النظام:** تم استخدام أمر الرسائل الخاصة للمستخدم ${user} بواسطة ${interaction.user}`
-        );
-
-        return;
       }
 
-      // Command: /dmall
-      if (interaction.commandName === "dmall") {
-        const message = interaction.options.getString("message");
-        const image = interaction.options.getAttachment("image");
-
-        await interaction.reply({
-          content: "بدأت عملية الإرسال لجميع الأعضاء، قد يستغرق الأمر بعض الوقت...",
-          ephemeral: true
-        });
-
-        const members = await interaction.guild.members.fetch();
-        let successCount = 0;
-        let failCount = 0;
-
-        let dmPayload = { content: message };
-        if (image) dmPayload.files = [image.url];
-
-        for (const [id, member] of members) {
-          if (member.user.bot) continue;
-
-          try {
-            await member.send(dmPayload);
-            successCount++;
-          } catch {
-            failCount++;
-          }
-
-          await sleep(1500);
-        }
-
-        await interaction.followUp({
-          content: `اكتملت العملية.\nتم الإرسال بنجاح إلى: ${successCount}\nفشل الإرسال إلى: ${failCount}`,
-          ephemeral: true
-        });
-
-        return;
-      }
-
-      // Command: /announce
-      if (interaction.commandName === "announce") {
-        const title = interaction.options.getString("title");
-        const message = interaction.options.getString("message");
-        const image = interaction.options.getAttachment("image");
-
-        let announceText = `**${title}**\n\n${message}`;
-        let announcePayload = { content: announceText };
-
-        if (image) announcePayload.files = [image.url];
-
-        await interaction.reply({
-          content: "تم نشر الإعلان بنجاح.",
-          ephemeral: true
-        });
-
-        await interaction.channel.send(announcePayload);
-        return;
-      }
-
-      // Command: /promo
-      if (interaction.commandName === "promo") {
-        const message = interaction.options.getString("message");
-
-        await interaction.reply({
-          content: "تم إرسال البرومو بنجاح.",
-          ephemeral: true
-        });
-
-        await interaction.channel.send(message);
-        return;
-      }
-
-      // Command: /image (إرسال صورة في الروم)
-      if (interaction.commandName === "image") {
-        const imageFile = interaction.options.getAttachment("file");
-        const optionalMessage = interaction.options.getString("message");
-
-        let imagePayload = {
-          files: [imageFile.url]
-        };
-
-        if (optionalMessage) {
-          imagePayload.content = optionalMessage;
-        }
-
-        await interaction.reply({
-          content: "تم إرسال الصورة بنجاح.",
-          ephemeral: true
-        });
-
-        await interaction.channel.send(imagePayload);
-        return;
-      }
+    } catch (error) {
+      // بعض القنوات لا تدعم Webhooks
     }
+  }
 
-    // Button Handling: Open Ticket
-    if (interaction.isButton() && interaction.customId === "ticket_open") {
-      const guild = interaction.guild;
-      
-      // تجهيز اسم التذكرة باليوزر
-      const usernameClean = interaction.user.username.toLowerCase().replace(/[^a-z0-9]/g, "");
-      const ticketChannelName = `ticket-${usernameClean || interaction.user.id}`;
+  return deleted;
+}
 
-      // التحقق من وجود تذكرة سابقة باسم اليوزر أو بالآيدي
-      const existingChannel = guild.channels.cache.find(
-        channel => channel.name === ticketChannelName || channel.name === `ticket-${interaction.user.id}`
-      );
+async function fullProtection(guild) {
 
-      if (existingChannel) {
-        await interaction.reply({
-          content: `لديك تذكرة مفتوحة بالفعل: ${existingChannel}`,
-          ephemeral: true
-        });
-        return;
+  console.log(`\n🛡️ Starting protection in ${guild.name}\n`);
+
+  const roles = await removePermissionRoles(guild);
+
+  const bots = await kickAllBots(guild);
+
+  const webhooks = await deleteAllWebhooks(guild);
+
+  return {
+    rolesRemoved: roles.removed,
+    membersChanged: roles.membersChanged,
+    botsKicked: bots,
+    webhooksDeleted: webhooks
+  };
+}
+
+client.once("ready", async () => {
+
+  console.log("================================");
+  console.log(`🛡️ Logged in as ${client.user.tag}`);
+  console.log(`🏠 Servers: ${client.guilds.cache.size}`);
+  console.log("================================");
+
+  await registerCommands();
+});
+
+client.on("guildCreate", async guild => {
+
+  try {
+    const rest = new REST({
+      version: "10"
+    }).setToken(TOKEN);
+
+    await rest.put(
+      Routes.applicationGuildCommands(
+        client.user.id,
+        guild.id
+      ),
+      {
+        body: [command.toJSON()]
       }
-
-      const channel = await guild.channels.create({
-        name: ticketChannelName,
-        type: ChannelType.GuildText,
-        parent: TICKET_CATEGORY_ID,
-        permissionOverwrites: [
-          {
-            id: guild.roles.everyone.id,
-            deny: [PermissionFlagsBits.ViewChannel]
-          },
-          {
-            id: interaction.user.id,
-            allow: [
-              PermissionFlagsBits.ViewChannel,
-              PermissionFlagsBits.SendMessages,
-              PermissionFlagsBits.ReadMessageHistory
-            ]
-          },
-          {
-            id: guild.members.me.id,
-            allow: [
-              PermissionFlagsBits.ViewChannel,
-              PermissionFlagsBits.SendMessages,
-              PermissionFlagsBits.ManageChannels,
-              PermissionFlagsBits.ReadMessageHistory
-            ]
-          }
-        ]
-      });
-
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId("ticket_close")
-          .setLabel("إغلاق التذكرة")
-          .setStyle(ButtonStyle.Danger)
-      );
-
-      const ticketText = 
-        `${interaction.user} <@&${SUPPORT_ROLE_ID}>\n` +
-        "**تذكرة جديدة**\n" +
-        "اكتب تفاصيل طلبك أو مشكلتك هنا وسيقوم الفريق بالرد عليك.";
-
-      await channel.send({
-        content: ticketText,
-        components: [row]
-      });
-
-      await interaction.reply({
-        content: `تم إنشاء التذكرة بنجاح: ${channel}`,
-        ephemeral: true
-      });
-
-      return;
-    }
-
-    // Button Handling: Close Ticket (الإدارة فقط)
-    if (interaction.isButton() && interaction.customId === "ticket_close") {
-      if (!interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
-        await interaction.reply({
-          content: "عذراً، هذا الإجراء مخصص فقط لأعضاء الإدارة.",
-          ephemeral: true
-        });
-        return;
-      }
-
-      await interaction.reply("سيتم إغلاق القناة خلال 5 ثوانٍ...");
-
-      setTimeout(() => {
-        interaction.channel.delete().catch(() => {});
-      }, 5000);
-
-      return;
-    }
+    );
 
   } catch (error) {
-    console.error("Unhandled Interaction Error:", error);
+    console.error(error.message);
+  }
+});
 
-    if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({
-        content: "حدث خطأ غير متوقع أثناء معالجة الطلب.",
-        ephemeral: true
-      }).catch(() => {});
+client.on("interactionCreate", async interaction => {
+
+  if (
+    !interaction.isChatInputCommand() ||
+    interaction.commandName !== "protect"
+  ) {
+    return;
+  }
+
+  if (!interaction.guild) {
+    return interaction.reply({
+      content: "❌ هذا الأمر للسيرفرات فقط.",
+      ephemeral: true
+    });
+  }
+
+  if (!isAdmin(interaction.member)) {
+    return interaction.reply({
+      content: "❌ تحتاج Administrator لاستخدام الأمر.",
+      ephemeral: true
+    });
+  }
+
+  const subcommand =
+    interaction.options.getSubcommand();
+
+  if (subcommand === "status") {
+
+    return interaction.reply({
+      content:
+        "🛡️ **Protection Bot يعمل**\n\n" +
+        "استخدم `/protect confirm` لتنفيذ التنظيف الكامل.",
+      ephemeral: true
+    });
+  }
+
+  if (subcommand === "confirm") {
+
+    await interaction.reply({
+      content:
+        "⚠️ **بدأت عملية الحماية.**\n\n" +
+        "🧹 إزالة الرتب التي تحتوي صلاحيات\n" +
+        "🤖 طرد البوتات\n" +
+        "🔗 حذف الـ Webhooks",
+      ephemeral: true
+    });
+
+    try {
+
+      const result =
+        await fullProtection(interaction.guild);
+
+      const embed = new EmbedBuilder()
+        .setTitle("🛡️ Protection Complete")
+        .addFields(
+          {
+            name: "🧹 Permission Roles Removed",
+            value: String(result.rolesRemoved),
+            inline: true
+          },
+          {
+            name: "👤 Members Changed",
+            value: String(result.membersChanged),
+            inline: true
+          },
+          {
+            name: "🤖 Bots Kicked",
+            value: String(result.botsKicked),
+            inline: true
+          },
+          {
+            name: "🔗 Webhooks Deleted",
+            value: String(result.webhooksDeleted),
+            inline: true
+          }
+        )
+        .setTimestamp();
+
+      await interaction.channel.send({
+        embeds: [embed]
+      });
+
+      console.log("\n✅ Protection cleanup finished.");
+      console.log(result);
+
+    } catch (error) {
+
+      console.error(
+        "❌ Protection failed:",
+        error
+      );
+
     }
   }
 });
 
-// Bot Initialization
-(async () => {
-  await registerCommands();
-  await client.login(TOKEN);
-})();
+/*
+   الحماية المستمرة
+   يحذف:
+   - رسائل البوتات
+   - رسائل Webhooks
+   - الرسائل التي تحتوي Embeds
+*/
+
+client.on("messageCreate", async message => {
+
+  if (!message.guild) return;
+
+  // لا يحذف رسالة البوت نفسه
+  if (message.author.id === client.user.id) {
+    return;
+  }
+
+  const isBot = message.author.bot;
+  const isWebhook = Boolean(message.webhookId);
+  const hasEmbed = message.embeds.length > 0;
+
+  if (!isBot && !isWebhook && !hasEmbed) {
+    return;
+  }
+
+  try {
+
+    await message.delete();
+
+    console.log(
+      `🗑️ Deleted message ${message.id} | ` +
+      `Bot=${isBot} | ` +
+      `Webhook=${isWebhook} | ` +
+      `Embed=${hasEmbed}`
+    );
+
+  } catch (error) {
+
+    console.error(
+      `❌ Could not delete message ${message.id}:`,
+      error.message
+    );
+
+  }
+});
+
+client.on("error", error => {
+  console.error("Discord Error:", error);
+});
+
+process.on("unhandledRejection", error => {
+  console.error("Unhandled Promise:", error);
+});
+
+client.login(TOKEN);
