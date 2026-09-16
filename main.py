@@ -328,7 +328,6 @@ async def on_message(message):
 
     # --- حماية البوتات المخصصة ---
     if message.author.bot:
-        # 1. منع البوتات من المنشن مطلقاً
         has_mentions = message.mention_everyone or "@everyone" in message.content or "@here" in message.content or len(message.role_mentions) > 0 or len(message.mentions) > 0
         if has_mentions:
             try:
@@ -338,7 +337,6 @@ async def on_message(message):
             except Exception: pass
             return
 
-        # 2. منع سبام الرسائل الكثيرة (أكثر من 5 رسائل في ثانيتين)
         if check_spam_action(message.author.id, "bot_msg_spam", max_count=5, seconds=2):
             try:
                 await message.delete()
@@ -347,11 +345,12 @@ async def on_message(message):
             except Exception: pass
             return
 
-        # إذا كانت رسالة البوت تحتوي إمبيد عادي وبدون مخالفة -> يتجاهلها وينفذ الأوامر
         await bot.process_commands(message)
         return
 
-    # --- حماية الأعضاء البشرية ---
+    # --- حماية الأعضاء البشرية (مع الاستثناءات الذكية للردود) ---
+    
+    # 1. حظر روابط الدعوة
     if INVITE_REGEX.search(message.content):
         try:
             await message.delete()
@@ -359,6 +358,7 @@ async def on_message(message):
             return
         except Exception: pass
 
+    # 2. منشن الإيفري ون أو الرتب الكبيرة (تكرار 3 مرات بـ 3 دقائق)
     has_broad_mentions = message.mention_everyone or "@everyone" in message.content or "@here" in message.content
     if has_broad_mentions or len(message.role_mentions) > 0:
         if check_spam_action(message.author.id, "user_broad_mentions", max_count=3, seconds=180):
@@ -367,8 +367,18 @@ async def on_message(message):
             await strip_roles(message.author, "جالس يكرر منشن الرتب أو الإيفري ون بشكل مزعج")
             return
 
-    if len(message.mentions) >= 10 or check_spam_action(message.author.id, "mention_spam", max_count=3, seconds=10):
-        await strip_roles(message.author, "سوى سبام منشن للأعضاء بكثرة")
+    # 3. حماية منشن الأعضاء الذكية (تجاهل منشن الرد التلقائي)
+    user_mentions = message.mentions
+    # استثناء العضو المردود عليه إذا كان المنشن ناتج عن زر Reply
+    if message.reference and message.reference.resolved and isinstance(message.reference.resolved, discord.Message):
+        replied_user = message.reference.resolved.author
+        user_mentions = [m for m in user_mentions if m.id != replied_user.id]
+
+    # قمع العضو فقط إذا منشن أكثر من 5 أشخاص في نفس الرسالة أو سوى سبام منشن متكرر
+    if len(user_mentions) > 5 or check_spam_action(message.author.id, "user_mention_spam", max_count=4, seconds=10):
+        try: await message.delete()
+        except Exception: pass
+        await strip_roles(message.author, "سوى سبام منشن مزعج للأعضاء")
         return
 
     await bot.process_commands(message)
