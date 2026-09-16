@@ -46,7 +46,8 @@ EXEMPTED_BOTS = [
     652505019920285707, 
     762217899355013120, 
     1526691977863626802,
-    1510521767423246486
+    1510521767423246486,
+    995698729225027694  # البوت المصرح له بالويب هوك مع المنشن
 ]
 
 # الذاكرة المؤقتة
@@ -311,16 +312,41 @@ async def on_message(message):
     if not message.guild:
         return
 
-    # فحص وحظر ويب هوك يقوم بعمل منشن
+    # --- حماية الويب هوك الشاملة ---
     if message.webhook_id:
-        has_mentions = message.mention_everyone or "@everyone" in message.content or "@here" in message.content or len(message.role_mentions) > 0
+        has_mentions = (
+            message.mention_everyone or 
+            "@everyone" in message.content or 
+            "@here" in message.content or 
+            len(message.role_mentions) > 0 or 
+            len(message.mentions) > 0
+        )
+        
+        # إذا فيه منشن، نتأكد هل الفاعل هو البوت المصرح له أم لا
         if has_mentions:
+            if message.author.id == 995698729225027694:
+                await bot.process_commands(message)
+                return
+            
+            # أي ويب هوك آخر منشن يتصرف النظام فوراً ضد الرسالة والويب هوك والبوت المسبب
             try:
                 await message.delete()
                 webhook = await bot.fetch_webhook(message.webhook_id)
-                await webhook.delete(reason="حذف ويب هوك قام بعمل منشن")
+                await webhook.delete(reason="ويب هوك غير مصرح قام بعمل منشن")
             except Exception: pass
+
+            if message.author.bot and message.author.id not in EXEMPTED_BOTS:
+                bot_member = message.guild.get_member(message.author.id)
+                if bot_member:
+                    try:
+                        await message.guild.kick(bot_member, reason="طرد بوت بسبب استخدام الويب هوك مع المنشن")
+                        await send_owner_embed(message.guild, "طرد بوت منشن بالويب هوك", bot_member, "البوت استخدم ويب هوك وعمل منشن في السيرفر فطرده البوت تلقائياً")
+                    except Exception: pass
             return
+
+        # الويب هوك بدون منشن مسموح به
+        await bot.process_commands(message)
+        return
 
     if message.author.id in ALL_OWNERS or message.author.id in EXEMPTED_BOTS:
         await bot.process_commands(message)
@@ -348,7 +374,7 @@ async def on_message(message):
         await bot.process_commands(message)
         return
 
-    # --- حماية الأعضاء البشرية (مع الاستثناءات الذكية للردود) ---
+    # --- حماية الأعضاء البشرية ---
     
     # 1. حظر روابط الدعوة
     if INVITE_REGEX.search(message.content):
@@ -369,12 +395,10 @@ async def on_message(message):
 
     # 3. حماية منشن الأعضاء الذكية (تجاهل منشن الرد التلقائي)
     user_mentions = message.mentions
-    # استثناء العضو المردود عليه إذا كان المنشن ناتج عن زر Reply
     if message.reference and message.reference.resolved and isinstance(message.reference.resolved, discord.Message):
         replied_user = message.reference.resolved.author
         user_mentions = [m for m in user_mentions if m.id != replied_user.id]
 
-    # قمع العضو فقط إذا منشن أكثر من 5 أشخاص في نفس الرسالة أو سوى سبام منشن متكرر
     if len(user_mentions) > 5 or check_spam_action(message.author.id, "user_mention_spam", max_count=4, seconds=10):
         try: await message.delete()
         except Exception: pass
