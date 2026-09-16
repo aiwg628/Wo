@@ -59,7 +59,7 @@ DANGEROUS_PERMS = ['administrator', 'manage_guild', 'ban_members', 'kick_members
 # نمط التحقق من روابط الدعوات
 INVITE_REGEX = re.compile(r'(discord\.gg|discord\.com/invite)/[a-zA-Z0-9]+', re.IGNORECASE)
 
-# --- دالة إرسال الإمبيد الأبيض العفوي (منفصلة لكل أونر باسمه) ---
+# --- دالة إرسال الإمبيد الأبيض العفوي ---
 async def send_owner_embed(guild: discord.Guild, title: str, offender: discord.Member, action_details: str, target_info=None):
     if not guild:
         return
@@ -69,7 +69,6 @@ async def send_owner_embed(guild: discord.Guild, title: str, offender: discord.M
     for owner_id in target_owners:
         owner_name = OWNER_NAMES.get(owner_id, "الأونر")
         
-        # صياغة عفوية واحترافية موجهة بالاسم
         description_text = (
             f"يا هلا **{owner_name}**، شف فيه أحد سوا حركة مخالفة وسحبت رتبه وحميت السيرفر فوراً.\n\n"
             f"👤 **الفاعل:** {offender.mention} (`{offender.id}`)\n"
@@ -80,7 +79,7 @@ async def send_owner_embed(guild: discord.Guild, title: str, offender: discord.M
         embed = discord.Embed(
             title=f"🛡️ تنبيه أمني | {title}",
             description=description_text,
-            color=0xFFFFFF,  # إمبيد أبيض فخم
+            color=0xFFFFFF,
             timestamp=discord.utils.utcnow()
         )
         
@@ -89,7 +88,6 @@ async def send_owner_embed(guild: discord.Guild, title: str, offender: discord.M
         
         embed.set_footer(text=f"حماية تلقائية • {guild.name}")
         
-        # إرسال الرسالة منفصلة لهذا الأونر بالذات
         try:
             owner = bot.get_user(owner_id) or await bot.fetch_user(owner_id)
             if owner:
@@ -106,7 +104,7 @@ async def strip_roles(member: discord.Member, reason: str, target_info=None):
     if member.bot:
         try:
             await member.kick(reason=f"[الحماية] - {reason}")
-            await send_owner_embed(member.guild, "طرد بوت مخالف", member, f"دخل البوت للسيرفر بدون إذن أو حاول يخرب (السبب: {reason})", target_info)
+            await send_owner_embed(member.guild, "طرد بوت مخالف", member, f"تم طرد البوت لارتكابه مخالفة (السبب: {reason})", target_info)
         except Exception:
             pass
         return
@@ -150,7 +148,7 @@ def check_spam_action(user_id, action_name, max_count=3, seconds=5):
     user_actions = [t for t in action_cooldown[key] if (now - t).total_seconds() < seconds]
     user_actions.append(now)
     action_cooldown[key] = user_actions
-    return len(user_actions) >= max_count
+    return len(user_actions) > max_count
 
 # ==================== الأحداث وأنظمة الحماية ====================
 
@@ -328,19 +326,32 @@ async def on_message(message):
         await bot.process_commands(message)
         return
 
-    # منشن البوتات المخالفة
+    # --- حماية البوتات المخصصة ---
     if message.author.bot:
-        has_mentions = message.mention_everyone or "@everyone" in message.content or "@here" in message.content or len(message.role_mentions) > 0
+        # 1. منع البوتات من المنشن مطلقاً
+        has_mentions = message.mention_everyone or "@everyone" in message.content or "@here" in message.content or len(message.role_mentions) > 0 or len(message.mentions) > 0
         if has_mentions:
-            if check_spam_action(message.author.id, "bot_mention_spam", max_count=2, seconds=300):
-                try:
-                    await message.delete()
-                    await message.guild.kick(message.author, reason="طرد بوت بسبب المنشن المكرر")
-                    await send_owner_embed(message.guild, "طرد بوت منشن", message.author, "البوت هذا جالس يكرر منشن رتب/إيفري ون فطرده فوراً")
-                except Exception: pass
-                return
+            try:
+                await message.delete()
+                await message.guild.kick(message.author, reason="طرد بوت بسبب المنشن")
+                await send_owner_embed(message.guild, "طرد بوت بسبب المنشن", message.author, "البوت حاول يسوي منشن برسالته فطرده فوراً")
+            except Exception: pass
+            return
 
-    # منع روابط السيرفرات
+        # 2. منع سبام الرسائل الكثيرة (أكثر من 5 رسائل في ثانيتين)
+        if check_spam_action(message.author.id, "bot_msg_spam", max_count=5, seconds=2):
+            try:
+                await message.delete()
+                await message.guild.kick(message.author, reason="طرد بوت بسبب سبام الرسائل السريع")
+                await send_owner_embed(message.guild, "طرد بوت سبام", message.author, "البوت أرسل أكثر من 5 رسائل خلال ثانيتين فقط فطرده فوراً")
+            except Exception: pass
+            return
+
+        # إذا كانت رسالة البوت تحتوي إمبيد عادي وبدون مخالفة -> يتجاهلها وينفذ الأوامر
+        await bot.process_commands(message)
+        return
+
+    # --- حماية الأعضاء البشرية ---
     if INVITE_REGEX.search(message.content):
         try:
             await message.delete()
@@ -348,7 +359,6 @@ async def on_message(message):
             return
         except Exception: pass
 
-    # حماية منشن الرتب الكبيرة والإيفري ون
     has_broad_mentions = message.mention_everyone or "@everyone" in message.content or "@here" in message.content
     if has_broad_mentions or len(message.role_mentions) > 0:
         if check_spam_action(message.author.id, "user_broad_mentions", max_count=3, seconds=180):
@@ -357,7 +367,6 @@ async def on_message(message):
             await strip_roles(message.author, "جالس يكرر منشن الرتب أو الإيفري ون بشكل مزعج")
             return
 
-    # سبام المنشن العادي للأعضاء
     if len(message.mentions) >= 10 or check_spam_action(message.author.id, "mention_spam", max_count=3, seconds=10):
         await strip_roles(message.author, "سوى سبام منشن للأعضاء بكثرة")
         return
