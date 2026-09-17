@@ -13,7 +13,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "نظام الحماية القصوى يعمل 24/7"
+    return "نظام الحماية يعمل 24/7"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -47,7 +47,7 @@ EXEMPTED_BOTS = [
     762217899355013120, 
     1526691977863626802,
     1510521767423246486,
-    995698729225027694  # البوت المصرح له بالويب هوك مع المنشن
+    995698729225027694
 ]
 
 # الذاكرة المؤقتة
@@ -60,7 +60,7 @@ DANGEROUS_PERMS = ['administrator', 'manage_guild', 'ban_members', 'kick_members
 # نمط التحقق من روابط الدعوات
 INVITE_REGEX = re.compile(r'(discord\.gg|discord\.com/invite)/[a-zA-Z0-9]+', re.IGNORECASE)
 
-# --- دالة إرسال الإمبيد الأبيض العفوي ---
+# --- دالة إرسال الإمبيد للأونر ---
 async def send_owner_embed(guild: discord.Guild, title: str, offender: discord.Member, action_details: str, target_info=None):
     if not guild:
         return
@@ -71,7 +71,7 @@ async def send_owner_embed(guild: discord.Guild, title: str, offender: discord.M
         owner_name = OWNER_NAMES.get(owner_id, "الأونر")
         
         description_text = (
-            f"يا هلا **{owner_name}**، شف فيه أحد سوا حركة مخالفة وسحبت رتبه وحميت السيرفر فوراً.\n\n"
+            f"يا هلا **{owner_name}**، تم رصد مخالفة وإيقاف الفاعل لحماية السيرفر.\n\n"
             f"👤 **الفاعل:** {offender.mention} (`{offender.id}`)\n"
             f"📌 **وش سوا:** {action_details}\n"
             f"📍 **السيرفر:** {guild.name}"
@@ -85,7 +85,7 @@ async def send_owner_embed(guild: discord.Guild, title: str, offender: discord.M
         )
         
         if target_info:
-            embed.add_field(name="🔹 التفاصيل / الهدف:", value=target_info, inline=False)
+            embed.add_field(name="🔹 التفاصيل:", value=target_info, inline=False)
         
         embed.set_footer(text=f"حماية تلقائية • {guild.name}")
         
@@ -101,16 +101,14 @@ async def strip_roles(member: discord.Member, reason: str, target_info=None):
     if member.id in ALL_OWNERS or member.id in EXEMPTED_BOTS:
         return
         
-    # طرد البوت المخالف غير المستثنى
     if member.bot:
         try:
             await member.kick(reason=f"[الحماية] - {reason}")
-            await send_owner_embed(member.guild, "طرد بوت مخالف", member, f"تم طرد البوت لارتكابه مخالفة (السبب: {reason})", target_info)
+            await send_owner_embed(member.guild, "طرد بوت مخالف", member, f"تم طرد البوت (السبب: {reason})", target_info)
         except Exception:
             pass
         return
     
-    # الأعضاء البشرية: سحب الرتب صامتاً مع إرسال تنبيه للخاص
     bot_top_role = member.guild.me.top_role
     all_removable_roles = [role for role in member.roles if not role.is_default() and role.position < bot_top_role.position]
     
@@ -142,7 +140,7 @@ async def get_audit_executor(guild, action_type, check_time=5):
         pass
     return None
 
-# --- دالة مراقبة التكرار (Spam) ---
+# --- دالة مراقبة التكرار ---
 def check_spam_action(user_id, action_name, max_count=3, seconds=5):
     now = datetime.datetime.now(datetime.timezone.utc)
     key = f"{user_id}_{action_name}"
@@ -306,104 +304,44 @@ async def on_guild_emojis_update(guild, before, after):
             member = guild.get_member(entry.user.id)
             if member: await strip_roles(member, "حذف إيموجيات من السيرفر")
 
-# 5. معالجة الرسائل والمنشنات وروابط الدعوات
+# 5. معالجة الرسائل وروابط الدعوة والحظر عند تجاوز 400 منشن
 @bot.event
 async def on_message(message):
     if not message.guild:
         return
 
-    # --- حماية الويب هوك الشاملة ---
-    if message.webhook_id:
-        has_mentions = (
-            message.mention_everyone or 
-            "@everyone" in message.content or 
-            "@here" in message.content or 
-            len(message.role_mentions) > 0 or 
-            len(message.mentions) > 0
-        )
-        
-        # إذا فيه منشن، نتأكد هل الفاعل هو البوت المصرح له أم لا
-        if has_mentions:
-            if message.author.id == 995698729225027694:
-                await bot.process_commands(message)
-                return
-            
-            # أي ويب هوك آخر منشن يتصرف النظام فوراً ضد الرسالة والويب هوك والبوت المسبب
-            try:
-                await message.delete()
-                webhook = await bot.fetch_webhook(message.webhook_id)
-                await webhook.delete(reason="ويب هوك غير مصرح قام بعمل منشن")
-            except Exception: pass
-
-            if message.author.bot and message.author.id not in EXEMPTED_BOTS:
-                bot_member = message.guild.get_member(message.author.id)
-                if bot_member:
-                    try:
-                        await message.guild.kick(bot_member, reason="طرد بوت بسبب استخدام الويب هوك مع المنشن")
-                        await send_owner_embed(message.guild, "طرد بوت منشن بالويب هوك", bot_member, "البوت استخدم ويب هوك وعمل منشن في السيرفر فطرده البوت تلقائياً")
-                    except Exception: pass
-            return
-
-        # الويب هوك بدون منشن مسموح به
-        await bot.process_commands(message)
-        return
-
+    # استثناء الأونرات والبوتات المستثناة تماماً
     if message.author.id in ALL_OWNERS or message.author.id in EXEMPTED_BOTS:
         await bot.process_commands(message)
         return
 
-    # --- حماية البوتات المخصصة ---
-    if message.author.bot:
-        has_mentions = message.mention_everyone or "@everyone" in message.content or "@here" in message.content or len(message.role_mentions) > 0 or len(message.mentions) > 0
-        if has_mentions:
-            try:
-                await message.delete()
-                await message.guild.kick(message.author, reason="طرد بوت بسبب المنشن")
-                await send_owner_embed(message.guild, "طرد بوت بسبب المنشن", message.author, "البوت حاول يسوي منشن برسالته فطرده فوراً")
-            except Exception: pass
-            return
+    # حساب إجمالي عدد الأشخاص والأنماط الممنشنة بالرسالة
+    total_mentions = len(message.mentions) + len(message.role_mentions)
+    if message.mention_everyone:
+        total_mentions += message.guild.member_count
 
-        if check_spam_action(message.author.id, "bot_msg_spam", max_count=5, seconds=2):
+    # الحماية الوحيدة للمنشن: إذا كان المنشن فوق 400 عضو في رسالة واحدة (للبوتات والأعضاء)
+    if total_mentions > 400:
+        try:
+            await message.delete()
+        except Exception: pass
+        
+        if message.author.bot:
             try:
-                await message.delete()
-                await message.guild.kick(message.author, reason="طرد بوت بسبب سبام الرسائل السريع")
-                await send_owner_embed(message.guild, "طرد بوت سبام", message.author, "البوت أرسل أكثر من 5 رسائل خلال ثانيتين فقط فطرده فوراً")
+                await message.guild.kick(message.author, reason="طرد بوت بسبب منشن ضخم جداً (أكثر من 400)")
+                await send_owner_embed(message.guild, "طرد بوت منشن ضخم", message.author, "البوت حاول يسوي منشن لأكثر من 400 عضو بالرسالة")
             except Exception: pass
-            return
-
-        await bot.process_commands(message)
+        else:
+            await strip_roles(message.author, "سوى منشن جماعي ضخم جداً (أكثر من 400 عضو)")
         return
 
-    # --- حماية الأعضاء البشرية ---
-    
-    # 1. حظر روابط الدعوة
+    # حظر روابط الدعوة
     if INVITE_REGEX.search(message.content):
         try:
             await message.delete()
             await strip_roles(message.author, "نشر رابط دعوة لسيرفر ثاني بالرسائل")
             return
         except Exception: pass
-
-    # 2. منشن الإيفري ون أو الرتب الكبيرة (تكرار 3 مرات بـ 3 دقائق)
-    has_broad_mentions = message.mention_everyone or "@everyone" in message.content or "@here" in message.content
-    if has_broad_mentions or len(message.role_mentions) > 0:
-        if check_spam_action(message.author.id, "user_broad_mentions", max_count=3, seconds=180):
-            try: await message.delete()
-            except Exception: pass
-            await strip_roles(message.author, "جالس يكرر منشن الرتب أو الإيفري ون بشكل مزعج")
-            return
-
-    # 3. حماية منشن الأعضاء الذكية (تجاهل منشن الرد التلقائي)
-    user_mentions = message.mentions
-    if message.reference and message.reference.resolved and isinstance(message.reference.resolved, discord.Message):
-        replied_user = message.reference.resolved.author
-        user_mentions = [m for m in user_mentions if m.id != replied_user.id]
-
-    if len(user_mentions) > 5 or check_spam_action(message.author.id, "user_mention_spam", max_count=4, seconds=10):
-        try: await message.delete()
-        except Exception: pass
-        await strip_roles(message.author, "سوى سبام منشن مزعج للأعضاء")
-        return
 
     await bot.process_commands(message)
 
